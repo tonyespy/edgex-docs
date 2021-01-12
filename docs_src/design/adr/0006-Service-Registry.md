@@ -29,7 +29,7 @@ for EdgeX.
 
 This ADR is meant to address the current usage of the registry by EdgeX services, and in particular whether the EdgeX services
 are using the registry to determine the location of peer services vs. using static per-service configuration.
-The reason this is being investigated is that there's been a proposal that EdgeX do away with the registry functionality, as the
+The reason this is being investigated is that there has been a proposal that EdgeX do away with the registry functionality, as the
 current implementation is not considered _secure_, due to the current configuration of Consul as used by the latest version of EdgeX
 (Hanoi/1.3.0).
 
@@ -165,7 +165,7 @@ services was making a REST call to check the address of a service endpoint every
 filed (https://github.com/edgexfoundry/edgex-go/issues/2594), and the client monitoring was removed as part of the Geneva 1.2.1 release.
 
 ## Problem Statement
-The fundamental problem with the existing implementations (as decribed above), is that there's too much duplication of configuration across
+The fundamental problem with the existing implementations (as decribed above), is that there is too much duplication of configuration across
 services. For instance, Core Data's service port can easily be changed by passing the environment variable SERVICE_PORT to the service on
 startup. This overrides the configuration read from the configuration provider, and will cause Core Data to listen on the new port,
 however it has no impact on any services which use Core Data, as the client config for each is read from the configuration provider (excluding
