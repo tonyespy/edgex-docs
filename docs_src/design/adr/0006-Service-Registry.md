@@ -179,6 +179,11 @@ Update the core, support, and security-proxy-setup to use go-mod-registry's ```C
 a service dependency is available and (b) use the returned address information to initialize client endpoints (or setup the correct route in the
 case of proxy-setup).
 
+*Note* - One impact of this decision is that as the security-proxy-setup service currently runs _before_ any of the core and support services are
+started, it would not be possible to implement this proposal without also modifying the service to use a lazy initialization of the API Gateway's
+routes. We should also explore whether it's possible to extend the registry abstraction to allow notification of new service registrations vs. forcing
+proxy-setup to poll for all known services.
+
 ## References
  * [1] [ADR 0001-Registry-Refactor](https://github.com/edgexfoundry/edgex-docs/blob/master/docs_src/design/adr/0001-Registy-Refactor.md)
  * [2] [Consul](https://github.com/hashicorp/consul)
