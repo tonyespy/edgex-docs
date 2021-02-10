@@ -41,7 +41,7 @@ should be able to accomplish the following tasks:
  * Respond to shutdown requests by:
    * Cleaning up resources in an orderly fashion
    * Unregistering itself from the registry
- * _Get the address of another EdgeX microservice by service name through the registry (when enabled)_
+ * _Get the address (host & port) of another EdgeX microservice by service name through the registry (when enabled)_
 
 The purpose of this design is to ensure that services themselves advertise their location to the rest of the system by first self-
 registering. Most service registries (including Consul) implement some sort of health check mechanism. If a service is failing one
@@ -82,7 +82,7 @@ level=ERROR app=device-virtual source=service.go:149 msg="DeviceServicForName fa
 level=ERROR app=device-virtual source=init.go:45 msg="Couldn't register to metadata service: Get \"http://localhost:3112/api/v1/deviceservice/name/device-virtual\": dial tcp 127.0.0.1:3112: connect: connection refused\n"
 ```
 
-**Note** - in order to run this second test, the easiest way to do so is to remove remove and reinstall the snap vs. manually wiping
+**Note** - in order to run this second test, the easiest way to do so is to remove and reinstall the snap vs. manually wiping
 out device-virtual's configuration in Consul. I could have also stopped the service, modified the configuration directly in Consul,
 and restarted the service.
 
@@ -107,12 +107,16 @@ type Client interface {
         IsServiceAvailable(serviceId string) (bool, error)
 }
 ```
-While the SDK does use the ```IsServiceAvailable``` method on startup to confirm that its dependencies are available, it uses client config
-keys to initialize its various REST API endpoints used to interact with Core Data and Metadata.
 
-**NOTE** - the behavior of device-sdk-c has not yet been verified.
+#### Summary
 
-### Core and Support Instead
+If a device service is started with the registry flag set:
+
+ - Both Device SDKs register with the registry on startup, and unregister from the registry on normal shutdown.
+ - The Go SDK (device-sdk-go) queries the registry to check dependent service availability and health (via ```IsServiceAvailable```) on startup. Regardless of the registry setting, the Go SDK always sources the addresses of its dependent services from the Client* configuration stanzas.
+ - The C SDK queries the registry for the addresses of its dependent services. It pings the services directly to determine their availbility and health.
+
+### Core and Support Services
 The same approach was used for Core and Support services (i.e. reviewing the usage of go-mod-bootstrap's ```Client``` interface), and ironically,
 the SMA seems to be the only service in edgex-go that actually queries the registry for service location:
 
@@ -120,6 +124,10 @@ the SMA seems to be the only service in edgex-go that actually queries the regis
 ./internal/system/agent/getconfig/executor.go:		ep, err := e.registryClient.GetServiceEndpoint(serviceName)
 ./internal/system/agent/direct/metrics.go:		e, err := m.registryClient.GetServiceEndpoint(serviceName)
 ```
+
+In summary, other than the SMA's configuration and metrics logic, the Core and Support services behave in the same manner as device-sdk-go.
+
+**Note** - the SMA also has a longstanding issue [#2486](https://github.com/edgexfoundry/edgex-go/issues/2486) where it continuousy logs errors if one (or more) of the Support Services are not running. As described in the issue, this could be avoided if the SMA used the registry to determine if the services were actually available. See related issue [#1662](https://github.com/edgexfoundry/edgex-go/issues/1662) ('Look at Driving "Default Services List" via Configuration').
 
 ### Security Proxy Setup
 The security-proxy-setup service also relies on static service address configuration to configure the server routes for each
@@ -129,7 +137,8 @@ as the security services have never supported using our configuration provider (
 
 **Note** - Another point worth mentioning with respect to security services is that in the Geneva and Hanoi releases the service health checks
 registered by the services (and the associated ```IsServiceAvailable``` method) are used to orchestrate the ordered startup of the security
-services via a set of Consul scripts. This additional orchestration is only performed when EdgeX is deployed via docker.
+services via a set of Consul scripts. This additional orchestration is only performed when EdgeX is deployed via docker, and is slated to
+to be removed as part of the Ireland release.
 
 ## History
 After a bit of research reaching as far back as the California (0.6.1) release of EdgeX, I've managed to piece together why the
@@ -171,13 +180,12 @@ startup. This overrides the configuration read from the configuration provider, 
 however it has no impact on any services which use Core Data, as the client config for each is read from the configuration provider (excluding
 security-proxy-setup).
 
-This means in order to change a service port, environment variable overrides need to set for every client service as well as security-proxy-setup
-(if required).
+This means in order to change a service port, environment variable overrides (e.g. CLIENTS_COREDARA_PORT) need to set for every client service as well as security-proxy-setup (if required).
 
 ## Decision
-Update the core, support, and security-proxy-setup to use go-mod-registry's ```Client.GetServiceEndpoint``` method on startup to determine (a) if
+Update the core, support, and security-proxy-setup services to use go-mod-registry's ```Client.GetServiceEndpoint``` method on startup to determine (a) if
 a service dependency is available and (b) use the returned address information to initialize client endpoints (or setup the correct route in the
-case of proxy-setup).
+case of proxy-setup). The same changes also need to be applied to the App Functions SDK and Go Device SDK, with only minor changes required in the C Device SDK (see previous commments re: the current implementation).
 
 *Note* - One impact of this decision is that as the security-proxy-setup service currently runs _before_ any of the core and support services are
 started, it would not be possible to implement this proposal without also modifying the service to use a lazy initialization of the API Gateway's
